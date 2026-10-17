@@ -8,3 +8,5 @@ Small fixes do not need an ADR. Maintain STATUS and validation evidence with cha
 
 - [ADR-001](001-resumable-solver.md) â€” Implemented: resumable solver and borrowed diagnostics.
   Evidence: [validation](../validation/ADR-001.md).
+
+- [ADR-002](002-driver-performance.md) — Accepted: controlled driver profiling and tuning.
