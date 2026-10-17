@@ -1,0 +1,145 @@
+diff --git a/src/kernel.rs b/src/kernel.rs
+index c407532..66c4e4d 100644
+--- a/src/kernel.rs
++++ b/src/kernel.rs
+@@ -58,13 +58,9 @@ impl Kernel {
+         let newest = (head + col - 1) % m;
+         let newest_s = &s[newest * n..(newest + 1) * n];
+         match self {
+-            Self::Scalar => {
+-                for logical in 0..col {
+-                    let physical = (head + logical) % m;
+-                    sy_out[logical] = ordered_dot(newest_s, &y[physical * n..(physical + 1) * n]);
+-                    ss_out[logical] = ordered_dot(&s[physical * n..(physical + 1) * n], newest_s);
+-                }
+-            }
++            Self::Scalar => scalar_products(
++                History { n, m, head, col, s, y }, newest_s, sy_out, ss_out,
++            ),
+             #[cfg(feature = "faer-backend")]
+             Self::Faer => {
+                 let first = col.min(m - head);
+@@ -92,13 +88,24 @@ impl Kernel {
+     }
+ }
+ 
+-#[inline]
+-fn ordered_dot(a: &[f64], b: &[f64]) -> f64 {
+-    let mut sum = 0.0;
+-    for i in 0..a.len() {
+-        sum += a[i] * b[i];
+-    }
+-    sum
++// Keep scalar loops out of faer's dispatch code generation. One call per
++// history update is negligible compared with streaming the history columns.
++#[inline(never)]
++fn scalar_products(history: History<'_>, newest_s: &[f64], sy_out: &mut [f64], ss_out: &mut [f64]) {
++    let History { n, m, head, col, s, y } = history;
++                for logical in 0..col {
++                    let physical = (head + logical) % m;
++                    let old_y = &y[physical * n..(physical + 1) * n];
++                    let old_s = &s[physical * n..(physical + 1) * n];
++                    let mut sy = 0.0;
++                    let mut ss = 0.0;
++                    for i in 0..n {
++                        sy += newest_s[i] * old_y[i];
++                        ss += old_s[i] * newest_s[i];
++                    }
++                    sy_out[logical] = sy;
++                    ss_out[logical] = ss;
++                }
+ }
+ 
+ #[cfg(feature = "faer-backend")]
+diff --git a/src/run.rs b/src/run.rs
+index b70bcbd..33cfcf4 100644
+--- a/src/run.rs
++++ b/src/run.rs
+@@ -409,24 +409,24 @@ impl<'a> Run<'a> {
+                 self.solver.instrumentation.cmprlb_nanoseconds = t.cmprlb_nanoseconds;
+                 self.solver.instrumentation.subsm_nanoseconds = t.subsm_nanoseconds;
+             }
+-            if let Err(error) = direction {
+-                self.finish(Termination::Failed(match error {
+-                    DirectionError::NoDescent => Failure::NoDescentDirection,
+-                    DirectionError::Factorization => Failure::Factorization,
+-                    DirectionError::Numerical => Failure::Numerical,
+-                }));
+-                return;
+-            }
++            let derivative = match direction {
++                Ok(derivative) => derivative,
++                Err(error) => {
++                    self.finish(Termination::Failed(match error {
++                        DirectionError::NoDescent => Failure::NoDescentDirection,
++                        DirectionError::Factorization => Failure::Factorization,
++                        DirectionError::Numerical => Failure::Numerical,
++                    }));
++                    return;
++                }
++            };
+             self.solver.workspace.old_x.copy_from_slice(self.x);
+             self.solver
+                 .workspace
+                 .old_gradient
+                 .copy_from_slice(&self.solver.workspace.evaluation_gradient);
+             self.old_value = self.value;
+-            self.gdold = dot(
+-                &self.solver.workspace.old_gradient,
+-                &self.solver.workspace.direction,
+-            );
++            self.gdold = derivative;
+             let maximum = feasible_maximum_step(
+                 &self.solver.workspace.old_x,
+                 &self.solver.workspace.direction,
+@@ -434,11 +434,6 @@ impl<'a> Run<'a> {
+                 &self.solver.workspace.upper,
+                 self.iterations,
+             );
+-            let norm = dot(
+-                &self.solver.workspace.direction,
+-                &self.solver.workspace.direction,
+-            )
+-            .sqrt();
+             let initial = if self.iterations == 0 {
+                 let boxed = self
+                     .solver
+@@ -450,6 +445,7 @@ impl<'a> Run<'a> {
+                 if boxed {
+                     1.0
+                 } else {
++                    let norm = dot(&self.solver.workspace.direction, &self.solver.workspace.direction).sqrt();
+                     (1.0 / norm).min(maximum)
+                 }
+             } else {
+diff --git a/src/session.rs b/src/session.rs
+index a9c22a4..f776f05 100644
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -108,7 +108,7 @@ impl Session {
+         self.timings
+     }
+ 
+-    pub(crate) fn direction(&mut self, x: &[f64], w: &mut Workspace) -> Result<(), DirectionError> {
++    pub(crate) fn direction(&mut self, x: &[f64], w: &mut Workspace) -> Result<f64, DirectionError> {
+         self.constrained = w
+             .lower
+             .iter()
+@@ -188,7 +188,7 @@ impl Session {
+         if !directional_derivative.is_finite() {
+             Err(DirectionError::Numerical)
+         } else if directional_derivative < 0.0 {
+-            Ok(())
++            Ok(directional_derivative)
+         } else {
+             Err(DirectionError::NoDescent)
+         }
+@@ -1052,7 +1052,7 @@ mod tests {
+         session.updates = 1;
+         session.nfree = 2;
+ 
+-        assert_eq!(session.direction(&[0.0, 0.0], &mut w), Ok(()));
++        assert!(session.direction(&[0.0, 0.0], &mut w).unwrap() < 0.0);
+         assert_eq!(session.history_resets(), 1);
+         assert_eq!(session.skipped_updates(), 1);
+         assert!(!session.has_history());

@@ -1,0 +1,20 @@
+diff --git a/src/run.rs b/src/run.rs
+index b70bcbd..699959f 100644
+--- a/src/run.rs
++++ b/src/run.rs
+@@ -155,7 +155,6 @@ impl<'a> Run<'a> {
+             bounds.upper(),
+             solver.options.history_size(),
+         )?;
+-        solver.workspace.evaluation_gradient.fill(f64::NAN);
+         #[cfg(feature = "benchmark-instrumentation")]
+         {
+             solver.instrumentation = crate::BenchmarkTimings::default();
+@@ -508,7 +507,6 @@ impl<'a> Run<'a> {
+                     .min(self.solver.workspace.upper[i]);
+             }
+         }
+-        self.solver.workspace.trial_gradient.fill(f64::NAN);
+         self.phase = Phase::Trial;
+         #[cfg(feature = "benchmark-instrumentation")]
+         {
