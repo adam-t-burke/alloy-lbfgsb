@@ -1,0 +1,37 @@
+name: Rust
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        rust: [stable, 1.80.0]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - run: cargo test --locked --no-default-features
+      - run: cargo test --locked --all-features
+      - run: cargo run --locked --example resumable
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - run: cargo package --locked
+      - name: Check package attribution inventory
+        shell: bash
+        run: |
+          cargo package --list --locked > package-files.txt
+          grep -Fx LICENSE package-files.txt
+          grep -Fx UPSTREAM_LICENSE.txt package-files.txt
+          grep -Fx THIRD_PARTY_NOTICES.md package-files.txt
+          grep -Fx tests/reference/PROVENANCE.md package-files.txt

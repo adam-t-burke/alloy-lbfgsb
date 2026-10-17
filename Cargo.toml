@@ -23,6 +23,8 @@ include = [
     "UPSTREAM_LICENSE.txt",
     "THIRD_PARTY_NOTICES.md",
     "BENCHMARKS.md",
+    "docs/**/*.md",
+    "CHANGELOG.md",
 ]
 
 [features]

@@ -6,7 +6,7 @@ runs every combination of:
 
 - objectives: diagonal and neighbor-rotated quadratics, extended Rosenbrock,
   active corner, mixed bounds, and tied breakpoints;
-- dimensions: 25, 180, 512, 1000, 1984, and 4096;
+- dimensions: 25, 180, 512, 1000, 1984, 4096, and 8192;
 - history sizes: 5, 10, and 20.
 
 Run a representative deterministic release sweep with:
@@ -16,7 +16,7 @@ $env:LBFGSB_BENCH_MILLIS = '1000'
 cargo bench -p alloy-lbfgsb --bench performance -- --backend=deterministic
 ```
 
-Use `--full` for the 108-case matrix. Normal `cargo test` does not compile or
+Use `--full` for the 126-case matrix. Normal `cargo test` does not compile or
 run this harness. `LBFGSB_BENCH_MILLIS` is the minimum sample time per case.
 Use `--objective=<name>`, `--n=<dimension>`, and `--m=<history>` to benchmark
 an exact case.
@@ -189,7 +189,10 @@ compiled callbacks. The matching iteration and evaluation counts show that the
 same optimization path was exercised, but the timing gap includes Python
 dispatch and NumPy temporary-array costs.
 
-## Theseus end-to-end context
+## Historical Ariadne / Theseus end-to-end context
+
+The following commands and measurements belong to the original Ariadne repository;
+they are not executable standalone-crate checks.
 
 The existing ignored release benchmark was run with:
 
@@ -218,3 +221,26 @@ For coarse phase attribution, enable `benchmark-instrumentation` and inspect
 and kernel phases, and a residual containing validation, line-search
 bookkeeping, vector operations, report construction, and timer overhead. Timer
 reads are compiled out when the feature is disabled.
+
+## Resumable driver validation, 2026-10-17
+
+Three alternating one-second process runs compared the pre-refactor engine at
+9a200cb with the shared resumable engine. Windows, Intel Core Ultra 9 285K,
+rustc 1.89.0, deterministic backend, opt-level 3, LTO, one codegen unit;
+Rosenbrock n=1000, m=10. Baseline mean: 990.685 us/solve; resumable mean:
+1022.176 us/solve (3.18% overhead). All runs retained 24 iterations, 29 evaluations,
+and identical printed objective, projected gradient and coordinate checksum.
+The richer driver is not a speedup. Incomplete-gradient detection adds a buffer
+fill per request; the displacement norm is lazy to avoid an unconditional pass.
+These unpinned workstation results do not establish a universal overhead bound.
+Raw samples and environment: benchmarks/results/resumable-comparison.json.
+
+Large-dimension smoke runs used the same release configuration, m=10, at least
+250 ms and three timed solves. Active-corner n=1,000,000: 47.389 ms/solve,
+1 accepted iteration, 2 evaluations, zero projected gradient, 297,009,440 owned
+workspace bytes. Mixed-bounds n=100,000: 117.646 ms/solve, 20 iterations,
+24 evaluations, projected gradient 4.603e-6, 29,709,440 workspace bytes.
+These cases are smoke checks, not a broad large-scale performance comparison.
+Raw records: benchmarks/results/large-dimension-smoke.json. The harness now prints
+workspace_bytes using Workspace::allocated_bytes(), excluding allocator overhead,
+stack state and application arrays.

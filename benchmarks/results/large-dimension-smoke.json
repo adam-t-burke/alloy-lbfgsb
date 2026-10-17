@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-17",
+  "backend": "Deterministic",
+  "rustc": "1.89.0",
+  "minimum_sample_ms": 250,
+  "runs": [
+    {
+      "objective": "active-corner",
+      "n": 1000000,
+      "m": 10,
+      "microseconds": 47388.983,
+      "timed_solves": 6,
+      "iterations": 1,
+      "evaluations": 2,
+      "projected_gradient": 0.0,
+      "workspace_bytes": 297009440
+    },
+    {
+      "objective": "mixed-bounds",
+      "n": 100000,
+      "m": 10,
+      "microseconds": 117646.433,
+      "timed_solves": 3,
+      "iterations": 20,
+      "evaluations": 24,
+      "projected_gradient": 4.602928807218021e-06,
+      "workspace_bytes": 29709440
+    }
+  ],
+  "limitations": "Smoke measurements, not representative convergence proof. Workspace capacity excludes application arrays and allocator overhead."
+}

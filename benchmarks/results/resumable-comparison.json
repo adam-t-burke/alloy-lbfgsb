@@ -1,0 +1,81 @@
+{
+  "date": "2026-10-17",
+  "baseline_commit": "9a200cb",
+  "cpu": "Intel Core Ultra 9 285K",
+  "os": "Windows-11-10.0.26200-SP0",
+  "rustc": "1.89.0",
+  "backend": "Deterministic",
+  "profile": {
+    "opt_level": 3,
+    "lto": true,
+    "codegen_units": 1
+  },
+  "sample_seconds": 1,
+  "process_runs_per_variant": 3,
+  "baseline_mean_microseconds": 990.6850000000001,
+  "resumable_mean_microseconds": 1022.1763333333333,
+  "overhead_percent": 3.178743327428313,
+  "limitations": "Unpinned workstation timings, one objective/history/dimension; not a universal performance claim. New driver includes incomplete-gradient detection.",
+  "records": [
+    {
+      "variant": "baseline",
+      "repeat": 1,
+      "microseconds": 1005.219,
+      "iterations": 24,
+      "evaluations": 29,
+      "final_f": "9.39513428332634227e-10",
+      "final_pg": "8.04744548363804890e-5",
+      "x_checksum": "5.05424032059892546e5"
+    },
+    {
+      "variant": "resumable",
+      "repeat": 1,
+      "microseconds": 1025.724,
+      "iterations": 24,
+      "evaluations": 29,
+      "final_f": "9.39513428332634227e-10",
+      "final_pg": "8.04744548363804890e-5",
+      "x_checksum": "5.05424032059892546e5"
+    },
+    {
+      "variant": "baseline",
+      "repeat": 2,
+      "microseconds": 975.909,
+      "iterations": 24,
+      "evaluations": 29,
+      "final_f": "9.39513428332634227e-10",
+      "final_pg": "8.04744548363804890e-5",
+      "x_checksum": "5.05424032059892546e5"
+    },
+    {
+      "variant": "resumable",
+      "repeat": 2,
+      "microseconds": 1023.217,
+      "iterations": 24,
+      "evaluations": 29,
+      "final_f": "9.39513428332634227e-10",
+      "final_pg": "8.04744548363804890e-5",
+      "x_checksum": "5.05424032059892546e5"
+    },
+    {
+      "variant": "baseline",
+      "repeat": 3,
+      "microseconds": 990.927,
+      "iterations": 24,
+      "evaluations": 29,
+      "final_f": "9.39513428332634227e-10",
+      "final_pg": "8.04744548363804890e-5",
+      "x_checksum": "5.05424032059892546e5"
+    },
+    {
+      "variant": "resumable",
+      "repeat": 3,
+      "microseconds": 1017.588,
+      "iterations": 24,
+      "evaluations": 29,
+      "final_f": "9.39513428332634227e-10",
+      "final_pg": "8.04744548363804890e-5",
+      "x_checksum": "5.05424032059892546e5"
+    }
+  ]
+}
