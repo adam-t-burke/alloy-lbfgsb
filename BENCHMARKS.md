@@ -244,3 +244,24 @@ These cases are smoke checks, not a broad large-scale performance comparison.
 Raw records: benchmarks/results/large-dimension-smoke.json. The harness now prints
 workspace_bytes using Workspace::allocated_bytes(), excluding allocator overhead,
 stack state and application arrays.
+
+## Controlled attribution and numerical-preserving tuning, 2026-10-17
+
+The earlier 3.18% observation is a whole-benchmark slowdown, not isolated driver
+latency. ADR-002 repeats the comparison with fixed logical-CPU affinity, rotating
+order, multiple objectives/dimensions/backends and separate phase instrumentation.
+Removing gradient sentinel fills did not consistently recover the gap. The retained
+changes reuse a validated directional derivative, avoid unused norm reductions, and
+pair scalar history dot products while preserving each accumulation order.
+
+Direct final comparisons against 9a200cb measured deterministic Rosenbrock gains of
+5.42% at n=1000 and 5.56% at n=8192 (m=10). This is not a universal speedup: the
+100,000-variable faer mixed-bound case remained 2.53% slower than the old driver.
+An old-driver control with the same optimizations and validation still outperformed
+the resumable driver, especially in the large case. Direct wrapper and forced-inlining
+experiments did not consistently fix this. The remaining gap is open.
+
+See docs/validation/ADR-002.md for all final medians, reference definitions and limits;
+benchmarks/results/driver-profile/summary.json for ranges and independent arithmetic
+checks; tools/README.md for the shared harness, exact patches and reproduction steps.
+The evidence does not establish an exact assembly-level cause or universal API cost.

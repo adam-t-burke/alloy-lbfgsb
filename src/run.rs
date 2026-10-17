@@ -409,24 +409,24 @@ impl<'a> Run<'a> {
                 self.solver.instrumentation.cmprlb_nanoseconds = t.cmprlb_nanoseconds;
                 self.solver.instrumentation.subsm_nanoseconds = t.subsm_nanoseconds;
             }
-            if let Err(error) = direction {
-                self.finish(Termination::Failed(match error {
-                    DirectionError::NoDescent => Failure::NoDescentDirection,
-                    DirectionError::Factorization => Failure::Factorization,
-                    DirectionError::Numerical => Failure::Numerical,
-                }));
-                return;
-            }
+            let derivative = match direction {
+                Ok(derivative) => derivative,
+                Err(error) => {
+                    self.finish(Termination::Failed(match error {
+                        DirectionError::NoDescent => Failure::NoDescentDirection,
+                        DirectionError::Factorization => Failure::Factorization,
+                        DirectionError::Numerical => Failure::Numerical,
+                    }));
+                    return;
+                }
+            };
             self.solver.workspace.old_x.copy_from_slice(self.x);
             self.solver
                 .workspace
                 .old_gradient
                 .copy_from_slice(&self.solver.workspace.evaluation_gradient);
             self.old_value = self.value;
-            self.gdold = dot(
-                &self.solver.workspace.old_gradient,
-                &self.solver.workspace.direction,
-            );
+            self.gdold = derivative;
             let maximum = feasible_maximum_step(
                 &self.solver.workspace.old_x,
                 &self.solver.workspace.direction,
@@ -434,11 +434,6 @@ impl<'a> Run<'a> {
                 &self.solver.workspace.upper,
                 self.iterations,
             );
-            let norm = dot(
-                &self.solver.workspace.direction,
-                &self.solver.workspace.direction,
-            )
-            .sqrt();
             let initial = if self.iterations == 0 {
                 let boxed = self
                     .solver
@@ -450,6 +445,11 @@ impl<'a> Run<'a> {
                 if boxed {
                     1.0
                 } else {
+                    let norm = dot(
+                        &self.solver.workspace.direction,
+                        &self.solver.workspace.direction,
+                    )
+                    .sqrt();
                     (1.0 / norm).min(maximum)
                 }
             } else {

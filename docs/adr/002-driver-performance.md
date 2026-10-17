@@ -1,6 +1,6 @@
 # ADR-002: Isolate driver costs before tuning
 
-Status: Accepted
+Status: Implemented
 Date: 2026-10-17
 
 ## Context
@@ -27,3 +27,24 @@ record of its user-visible contract. No speculative parallelism or reassociation
 ## Validation
 Reference, protocol, allocation, scalar/all-feature and MSRV tests; strict lint,
 formatting and package verification. Report repeatability and test limitations.
+
+## Candidate decisions
+
+Retain the release gradient sentinel policy: its removal did not consistently
+recover the observed slowdown and would weaken incomplete-write detection.
+Evaluate reuse of Session::direction's validated directional derivative and
+compute the initial direction norm only for the unboxed first-step branch.
+Evaluate a single scalar loop for newest S/Y and S/S products, with independent
+accumulators in the same ascending coordinate order and original operand order.
+These remove redundant work without changing L-BFGS-B policy. Adoption depends
+on matching fingerprints, independent oracles, and measured case-level results.
+
+## Outcome
+
+Adopted derivative reuse, conditional first-step norm computation, and paired scalar
+history products in an isolated function. Retained sentinel validation and the public
+state-machine wrapper. Rejected direct-wrapper and forced-inline controls for mixed
+results. No arithmetic reassociation, backend-selection, history, or stopping-policy change.
+Independent oracles and measured fingerprints match. See docs/validation/ADR-002.md.
+Remaining equal-policy driver overhead is explicitly open; implemented does not mean
+universal performance parity. It records completion of this investigation and tuning.

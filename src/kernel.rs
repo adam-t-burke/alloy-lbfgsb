@@ -40,6 +40,8 @@ impl Kernel {
     /// Computes dot products of the newest S vector against all logical Y and
     /// S history vectors. History is split at the physical ring boundary, so
     /// neither backend repacks it.
+    /// Scalar products share one pass with independent accumulators, retaining
+    /// each product's coordinate and operand order (ADR-002).
     pub(crate) fn newest_products(
         self,
         history: History<'_>,
@@ -58,13 +60,19 @@ impl Kernel {
         let newest = (head + col - 1) % m;
         let newest_s = &s[newest * n..(newest + 1) * n];
         match self {
-            Self::Scalar => {
-                for logical in 0..col {
-                    let physical = (head + logical) % m;
-                    sy_out[logical] = ordered_dot(newest_s, &y[physical * n..(physical + 1) * n]);
-                    ss_out[logical] = ordered_dot(&s[physical * n..(physical + 1) * n], newest_s);
-                }
-            }
+            Self::Scalar => scalar_products(
+                History {
+                    n,
+                    m,
+                    head,
+                    col,
+                    s,
+                    y,
+                },
+                newest_s,
+                sy_out,
+                ss_out,
+            ),
             #[cfg(feature = "faer-backend")]
             Self::Faer => {
                 let first = col.min(m - head);
@@ -92,13 +100,31 @@ impl Kernel {
     }
 }
 
-#[inline]
-fn ordered_dot(a: &[f64], b: &[f64]) -> f64 {
-    let mut sum = 0.0;
-    for i in 0..a.len() {
-        sum += a[i] * b[i];
+// Keep scalar loops out of the backend dispatch code generation.
+// ADR-002 records the measured tradeoff of this function boundary.
+#[inline(never)]
+fn scalar_products(history: History<'_>, newest_s: &[f64], sy_out: &mut [f64], ss_out: &mut [f64]) {
+    let History {
+        n,
+        m,
+        head,
+        col,
+        s,
+        y,
+    } = history;
+    for logical in 0..col {
+        let physical = (head + logical) % m;
+        let old_y = &y[physical * n..(physical + 1) * n];
+        let old_s = &s[physical * n..(physical + 1) * n];
+        let mut sy = 0.0;
+        let mut ss = 0.0;
+        for i in 0..n {
+            sy += newest_s[i] * old_y[i];
+            ss += old_s[i] * newest_s[i];
+        }
+        sy_out[logical] = sy;
+        ss_out[logical] = ss;
     }
-    sum
 }
 
 #[cfg(feature = "faer-backend")]
@@ -158,6 +184,54 @@ mod tests {
         );
         assert_eq!(sy, [6.0, 8.0, 4.0]);
         assert_eq!(ss, [5.0, 9.0, 14.0]);
+    }
+
+    #[test]
+    fn paired_scalar_products_preserve_ordered_dot_bits() {
+        let n = 513;
+        let m = 5;
+        let magnitudes = [0.0, -0.0, 1.0, -1.0, 3.5e-80, -3.5e-80, 8.25e80, -8.25e80];
+        let s: Vec<_> = (0..n * m)
+            .map(|i| magnitudes[(i * 7 + i / 11) % magnitudes.len()])
+            .collect();
+        let y: Vec<_> = (0..n * m)
+            .map(|i| magnitudes[(i * 3 + i / 13 + 2) % magnitudes.len()])
+            .collect();
+        for head in 0..m {
+            for col in 1..=m {
+                let newest = (head + col - 1) % m;
+                let newest_s = &s[newest * n..(newest + 1) * n];
+                let mut actual_sy = vec![f64::NAN; col];
+                let mut actual_ss = vec![f64::NAN; col];
+                Kernel::Scalar.newest_products(
+                    History {
+                        n,
+                        m,
+                        head,
+                        col,
+                        s: &s,
+                        y: &y,
+                    },
+                    &mut actual_sy,
+                    &mut actual_ss,
+                );
+                for logical in 0..col {
+                    let physical = (head + logical) % m;
+                    // Independent sequential folds reproduce the former two-pass
+                    // arithmetic, including cancellation and signed-zero cases.
+                    let expected_sy = newest_s
+                        .iter()
+                        .zip(&y[physical * n..(physical + 1) * n])
+                        .fold(0.0_f64, |sum, (&a, &b)| sum + a * b);
+                    let expected_ss = s[physical * n..(physical + 1) * n]
+                        .iter()
+                        .zip(newest_s)
+                        .fold(0.0_f64, |sum, (&a, &b)| sum + a * b);
+                    assert_eq!(actual_sy[logical].to_bits(), expected_sy.to_bits());
+                    assert_eq!(actual_ss[logical].to_bits(), expected_ss.to_bits());
+                }
+            }
+        }
     }
 
     #[cfg(feature = "faer-backend")]

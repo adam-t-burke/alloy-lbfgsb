@@ -108,7 +108,11 @@ impl Session {
         self.timings
     }
 
-    pub(crate) fn direction(&mut self, x: &[f64], w: &mut Workspace) -> Result<(), DirectionError> {
+    pub(crate) fn direction(
+        &mut self,
+        x: &[f64],
+        w: &mut Workspace,
+    ) -> Result<f64, DirectionError> {
         self.constrained = w
             .lower
             .iter()
@@ -188,7 +192,7 @@ impl Session {
         if !directional_derivative.is_finite() {
             Err(DirectionError::Numerical)
         } else if directional_derivative < 0.0 {
-            Ok(())
+            Ok(directional_derivative)
         } else {
             Err(DirectionError::NoDescent)
         }
@@ -1052,7 +1056,15 @@ mod tests {
         session.updates = 1;
         session.nfree = 2;
 
-        assert_eq!(session.direction(&[0.0, 0.0], &mut w), Ok(()));
+        let derivative = session.direction(&[0.0, 0.0], &mut w).unwrap();
+        let recomputed: f64 = w
+            .evaluation_gradient
+            .iter()
+            .zip(&w.direction)
+            .map(|(&g, &d)| g * d)
+            .sum();
+        assert!(derivative < 0.0);
+        assert_eq!(derivative.to_bits(), recomputed.to_bits());
         assert_eq!(session.history_resets(), 1);
         assert_eq!(session.skipped_updates(), 1);
         assert!(!session.has_history());
