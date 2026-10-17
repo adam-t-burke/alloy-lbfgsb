@@ -1,2 +1,5 @@
 * text=auto eol=lf
 *.csv text eol=lf
+
+# Unified diffs require a space on otherwise empty context lines.
+tools/variants/*.patch -whitespace

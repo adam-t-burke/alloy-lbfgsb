@@ -6,8 +6,7 @@ Use sequential numbers and Proposed, Accepted, Implemented, or Superseded status
 Record decisions before implementation; mark Implemented only after verification.
 Small fixes do not need an ADR. Maintain STATUS and validation evidence with changes.
 
-- [ADR-001](001-resumable-solver.md) â€” Implemented: resumable solver and borrowed diagnostics.
+- [ADR-001](001-resumable-solver.md) - Implemented: resumable solver and borrowed diagnostics.
   Evidence: [validation](../validation/ADR-001.md).
-
-- [ADR-002](002-driver-performance.md) — Implemented: controlled driver profiling and tuning.
+- [ADR-002](002-driver-performance.md) - Implemented: controlled driver profiling and tuning.
   Evidence: [validation](../validation/ADR-002.md); remaining parity work is open.
