@@ -39,6 +39,7 @@ mod error;
 mod kernel;
 mod options;
 mod report;
+mod run;
 mod session;
 mod solver;
 mod workspace;
@@ -51,5 +52,6 @@ pub use report::BenchmarkTimings;
 pub use report::{
     Control, Convergence, Failure, Iteration, Report, Stats, StopReason, Termination,
 };
+pub use run::{Evaluation, EvaluationContext, EvaluationKind, Run, RunError, RunState};
 pub use solver::{SolveAdapter, Solver};
 pub use workspace::Workspace;

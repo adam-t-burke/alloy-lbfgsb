@@ -101,13 +101,7 @@ pub fn projected_gradient_norm(
         return Err(BoundsError::NonFiniteGradient { index });
     }
 
-    Ok(projected_gradient_and_active_count_unchecked(
-        x,
-        gradient,
-        bounds.lower,
-        bounds.upper,
-    )
-    .0)
+    Ok(projected_gradient_and_active_count_unchecked(x, gradient, bounds.lower, bounds.upper).0)
 }
 
 pub(crate) fn projected_gradient_and_active_count_unchecked(
@@ -116,23 +110,20 @@ pub(crate) fn projected_gradient_and_active_count_unchecked(
     lower: &[f64],
     upper: &[f64],
 ) -> (f64, usize) {
-    x.iter()
-        .zip(gradient)
-        .zip(lower.iter().zip(upper))
-        .fold(
-            (0.0_f64, 0usize),
-            |(norm, active), ((&x, &gradient), (&lower, &upper))| {
-                let component = if gradient < 0.0 {
-                    gradient.max(x - upper)
-                } else {
-                    gradient.min(x - lower)
-                };
-                let is_active = lower == upper
-                    || (x <= lower && gradient >= 0.0)
-                    || (x >= upper && gradient <= 0.0);
-                (norm.max(component.abs()), active + usize::from(is_active))
-            },
-        )
+    x.iter().zip(gradient).zip(lower.iter().zip(upper)).fold(
+        (0.0_f64, 0usize),
+        |(norm, active), ((&x, &gradient), (&lower, &upper))| {
+            let component = if gradient < 0.0 {
+                gradient.max(x - upper)
+            } else {
+                gradient.min(x - lower)
+            };
+            let is_active = lower == upper
+                || (x <= lower && gradient >= 0.0)
+                || (x >= upper && gradient <= 0.0);
+            (norm.max(component.abs()), active + usize::from(is_active))
+        },
+    )
 }
 
 #[cfg(test)]

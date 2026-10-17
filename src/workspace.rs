@@ -75,6 +75,37 @@ impl Workspace {
         Ok(workspace)
     }
 
+    /// Bytes reserved by owned vector buffers, including retained spare capacity.
+    /// Excludes allocator overhead, stack state and application buffers. O(1).
+    pub fn allocated_bytes(&self) -> usize {
+        self.lower.capacity() * std::mem::size_of::<f64>()
+            + self.upper.capacity() * std::mem::size_of::<f64>()
+            + self.evaluation_gradient.capacity() * std::mem::size_of::<f64>()
+            + self.final_gradient.capacity() * std::mem::size_of::<f64>()
+            + self.old_x.capacity() * std::mem::size_of::<f64>()
+            + self.old_gradient.capacity() * std::mem::size_of::<f64>()
+            + self.direction.capacity() * std::mem::size_of::<f64>()
+            + self.cauchy.capacity() * std::mem::size_of::<f64>()
+            + self.displacement.capacity() * std::mem::size_of::<f64>()
+            + self.product.capacity() * std::mem::size_of::<f64>()
+            + self.row.capacity() * std::mem::size_of::<f64>()
+            + self.reduced_gradient.capacity() * std::mem::size_of::<f64>()
+            + self.trial_gradient.capacity() * std::mem::size_of::<f64>()
+            + self.breakpoints.capacity() * std::mem::size_of::<f64>()
+            + self.order.capacity() * std::mem::size_of::<usize>()
+            + self.status.capacity() * std::mem::size_of::<i8>()
+            + self.s.capacity() * std::mem::size_of::<f64>()
+            + self.y.capacity() * std::mem::size_of::<f64>()
+            + self.sy.capacity() * std::mem::size_of::<f64>()
+            + self.ss.capacity() * std::mem::size_of::<f64>()
+            + self.wt.capacity() * std::mem::size_of::<f64>()
+            + self.wn.capacity() * std::mem::size_of::<f64>()
+            + self.wn1.capacity() * std::mem::size_of::<f64>()
+            + self.wa.capacity() * std::mem::size_of::<f64>()
+            + self.index.capacity() * std::mem::size_of::<usize>()
+            + self.changes.capacity() * std::mem::size_of::<usize>()
+    }
+
     /// Number of variables for which the workspace currently holds a result.
     pub fn dimension(&self) -> usize {
         self.final_gradient.len()
@@ -117,6 +148,7 @@ impl Workspace {
         reserve(&mut self.lower, n, "lower")?;
         reserve(&mut self.upper, n, "upper")?;
         reserve(&mut self.evaluation_gradient, n, "evaluation_gradient")?;
+        reserve(&mut self.final_gradient, n, "final_gradient")?;
         reserve(&mut self.trial_gradient, n, "trial_gradient")?;
         reserve(&mut self.old_x, n, "old_x")?;
         reserve(&mut self.old_gradient, n, "old_gradient")?;

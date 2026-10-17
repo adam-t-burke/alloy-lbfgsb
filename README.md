@@ -80,3 +80,51 @@ fixture hashes, and reproducibility limitations.
 
 Release benchmark cases, commands, the official-Fortran comparison harness,
 and recorded measurements are in [BENCHMARKS.md](BENCHMARKS.md).
+
+## Resumable evaluations and monitoring
+
+`Solver::start` returns a borrowing `Run`. Inspect `Run::state` to receive an
+`Evaluate` request, an `Accepted` view, or a `Finished` report. Fill the supplied
+gradient and submit the objective with `Run::submit`; continue an accepted point
+with `Run::advance(Control::Continue)`. See `cargo run --example resumable`.
+The callback APIs drive this same engine and remain the simplest synchronous API.
+
+Requests include initial/trial context, a one-based evaluation number, accepted
+iteration count and trial step length. `SolveAdapter::value_and_gradient_with_context`
+provides the same metadata to synchronous callers; its default calls the original
+callback. Accepted views borrow the gradient and report step length and the actual
+infinity norm of displacement via the O(n), on-demand `Iteration::step_norm()`. Repeated state inspection does not advance the run.
+No executor, worker threads or per-step heap allocation is introduced.
+
+Every requested gradient buffer is filled with NaNs: callbacks must overwrite all
+entries. Invalid submissions remain pending and can be repaired or aborted. Dropping
+or aborting a pending trial restores accepted coordinates; external simulation caches
+are caller-owned and must be invalidated or matched to their evaluated coordinates.
+An initial request has no evaluated accepted point. Application callback errors still
+return through `SolveError`, with trial coordinates rolled back.
+
+Keep the objective, bounds and all objective parameters fixed within a run. Start a
+new run when they change: allocation capacity is retained, curvature history is not.
+For asynchronous evaluations, suspend the run in caller-owned control flow; `Run` is
+an in-memory session, not a serializable checkpoint. Moving a run between threads is
+subject to Rust's normal ownership and Send rules.
+
+For stationarity-only built-in stopping, set `with_relative_function_tolerance(0.0)`
+and choose a positive projected-gradient tolerance. `Convergence::RelativeFunction`
+means the accepted objective reduction is small; it does not establish constrained
+KKT conditions or a global minimum. The caller owns any outer constraint checks.
+`Iteration` is now non-exhaustive; consumers must obtain it through callbacks rather
+than constructing literals. This is an API addition with a struct-literal compatibility
+change in the pre-1.0 release.
+
+## Development
+
+See [AGENTS.md](AGENTS.md), [status](docs/STATUS.md), and the
+[ADR index](docs/adr/README.md). CI tests stable Rust and Rust 1.80 on Windows and
+Linux, scalar and all-feature builds, reference fixtures and warm allocations.
+`Cargo.lock` fixes repository validation dependencies; downstream libraries resolve
+according to the published manifest. The crate remains pure Rust; Fortran is used
+only by the opt-in reference-fixture tooling.
+
+`Workspace::allocated_bytes()` reports owned vector capacity, excluding allocator overhead
+and application memory, for capacity planning and benchmark memory reporting.

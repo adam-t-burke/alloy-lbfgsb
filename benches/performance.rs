@@ -248,7 +248,7 @@ fn measure(objective: Objective, n: usize, m: usize, minimum: Duration, backend:
     }
     let elapsed = start.elapsed();
     println!(
-        "{:?},{},{},{},{},{:.3},{},{},{:?},{:.17e},{:.17e},{:.17e}",
+        "{:?},{},{},{},{},{:.3},{},{},{:?},{:.17e},{:.17e},{:.17e},{}",
         resolved,
         objective.name(),
         n,
@@ -261,6 +261,7 @@ fn measure(objective: Objective, n: usize, m: usize, minimum: Duration, backend:
         last.value,
         last.projected_gradient,
         last.checksum,
+        solver.workspace().allocated_bytes(),
     );
     #[cfg(feature = "benchmark-instrumentation")]
     {
@@ -306,11 +307,19 @@ fn main() {
     let dimension_filter = args
         .iter()
         .find_map(|arg| arg.strip_prefix("--n="))
-        .map(|value| value.parse::<usize>().expect("--n must be a positive integer"));
+        .map(|value| {
+            value
+                .parse::<usize>()
+                .expect("--n must be a positive integer")
+        });
     let history_filter = args
         .iter()
         .find_map(|arg| arg.strip_prefix("--m="))
-        .map(|value| value.parse::<usize>().expect("--m must be a positive integer"));
+        .map(|value| {
+            value
+                .parse::<usize>()
+                .expect("--m must be a positive integer")
+        });
     let millis = std::env::var("LBFGSB_BENCH_MILLIS")
         .ok()
         .and_then(|value| value.parse().ok())
@@ -326,7 +335,7 @@ fn main() {
     ];
 
     println!(
-        "resolved_backend,objective,n,m,runs,microseconds,iterations,evaluations,termination,final_f,final_pg,x_checksum"
+        "resolved_backend,objective,n,m,runs,microseconds,iterations,evaluations,termination,final_f,final_pg,x_checksum,workspace_bytes"
     );
     if objective_filter.is_some() || dimension_filter.is_some() || history_filter.is_some() {
         let selected_objectives: Vec<_> = objective_filter

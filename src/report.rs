@@ -134,15 +134,37 @@ pub struct Report {
 
 /// Information supplied after an accepted major iteration.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub struct Iteration<'a> {
     /// Accepted variable values.
     pub x: &'a [f64],
+    /// Gradient at the accepted point, borrowed without copying.
+    pub gradient: &'a [f64],
+    /// Accepted line-search step length (multiplier of the search direction).
+    pub step_length: f64,
+    pub(crate) previous_x: &'a [f64],
     /// Objective value at the accepted point.
     pub value: f64,
     /// Projected-gradient infinity norm at the accepted point.
     pub projected_gradient_norm: f64,
     /// Cumulative work counters and current active-set sizes.
     pub stats: Stats,
+}
+
+impl Iteration<'_> {
+    /// Infinity norm of the actual accepted coordinate displacement.
+    /// Computed on demand in O(n), without allocation or an extra pass for
+    /// applications that do not request this diagnostic.
+    pub fn step_norm(&self) -> f64 {
+        self.x
+            .iter()
+            .zip(self.previous_x)
+            .map(|(&x, &old)| (x - old).abs())
+            .fold(
+                0.0,
+                |maximum, value| if value > maximum { value } else { maximum },
+            )
+    }
 }
 
 /// Response from an accepted-iteration callback.

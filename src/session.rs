@@ -748,8 +748,7 @@ fn subsm(s: &Session, xx: &[f64], w: &mut Workspace) -> bool {
         let history_s = &w.s[p * s.n..(p + 1) * s.n];
         for i in 0..s.nfree {
             let k = w.index[i];
-            w.direction[i] += y[k] * w.wa[j] / s.theta
-                + history_s[k] * w.wa[s.col + j];
+            w.direction[i] += y[k] * w.wa[j] / s.theta + history_s[k] * w.wa[s.col + j];
         }
     }
     for value in &mut w.direction[..s.nfree] {

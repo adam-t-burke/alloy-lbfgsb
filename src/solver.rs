@@ -1,16 +1,10 @@
 //! Callback-first solver API backed by the in-repo scalar engine.
 #![allow(clippy::needless_range_loop)] // Preserve line-search arithmetic order.
 
-use crate::bounds::projected_gradient_and_active_count_unchecked;
-use crate::core::{feasible_maximum_step, DcSearch, SearchConfig, SearchResult};
 use crate::kernel::Kernel;
-use crate::session::{DirectionError, Session};
 #[cfg(feature = "benchmark-instrumentation")]
 use crate::BenchmarkTimings;
-use crate::{
-    Backend, Bounds, Control, Convergence, EvaluationError, Failure, Iteration, Options, Report,
-    SolveError, Stats, StopReason, Termination, Workspace,
-};
+use crate::{Backend, Bounds, Control, Iteration, Options, Report, SolveError, Workspace};
 #[cfg(feature = "benchmark-instrumentation")]
 use std::time::Instant;
 
@@ -24,6 +18,17 @@ pub trait SolveAdapter {
 
     /// Computes the objective value and overwrites every gradient entry.
     fn value_and_gradient(&mut self, x: &[f64], gradient: &mut [f64]) -> Result<f64, Self::Error>;
+
+    /// Evaluates a point with initial/trial scheduling context. The default calls
+    /// [`Self::value_and_gradient`]; context must not change the objective being solved.
+    fn value_and_gradient_with_context(
+        &mut self,
+        x: &[f64],
+        gradient: &mut [f64],
+        _context: crate::EvaluationContext,
+    ) -> Result<f64, Self::Error> {
+        self.value_and_gradient(x, gradient)
+    }
 
     /// Observes an accepted major iteration and optionally stops the solve.
     fn accepted_iteration(&mut self, _iteration: Iteration<'_>) -> Result<Control, Self::Error> {
@@ -55,11 +60,11 @@ where
 /// An L-BFGS-B solver with reusable owned workspace.
 #[derive(Debug)]
 pub struct Solver {
-    options: Options,
-    workspace: Workspace,
-    kernel: Kernel,
+    pub(crate) options: Options,
+    pub(crate) workspace: Workspace,
+    pub(crate) kernel: Kernel,
     #[cfg(feature = "benchmark-instrumentation")]
-    instrumentation: BenchmarkTimings,
+    pub(crate) instrumentation: BenchmarkTimings,
 }
 
 impl Default for Solver {
@@ -181,280 +186,48 @@ impl Solver {
     where
         A: SolveAdapter,
     {
-        bounds.validate(x.len())?;
-        if let Some(index) = x.iter().position(|value| !value.is_finite()) {
-            return Err(SolveError::InvalidInitialValue { index });
+        let mut run = self.start(x, bounds).map_err(convert_start_error)?;
+        loop {
+            match run.state() {
+                crate::RunState::Evaluate(evaluation) => {
+                    let value = adapter
+                        .value_and_gradient_with_context(
+                            evaluation.x,
+                            evaluation.gradient,
+                            evaluation.context,
+                        )
+                        .map_err(SolveError::Objective)?;
+                    run.submit(value).map_err(|error| match error {
+                        crate::RunError::Evaluation(error) => SolveError::Evaluation(error),
+                        _ => SolveError::Internal(error.to_string()),
+                    })?;
+                }
+                crate::RunState::Accepted(iteration) => {
+                    let control = adapter
+                        .accepted_iteration(iteration)
+                        .map_err(SolveError::Callback)?;
+                    run.advance(control)
+                        .map_err(|error| SolveError::Internal(error.to_string()))?;
+                }
+                crate::RunState::Finished(report) => return Ok(report),
+            }
         }
-        for ((xi, &lower), &upper) in x.iter_mut().zip(bounds.lower()).zip(bounds.upper()) {
-            *xi = xi.max(lower).min(upper);
-        }
+    }
 
-        let n = x.len();
-        self.workspace
-            .prepare(bounds.lower(), bounds.upper(), self.options.history_size())?;
-        #[cfg(feature = "benchmark-instrumentation")]
-        {
-            self.instrumentation = BenchmarkTimings::default();
-        }
-        #[cfg(feature = "benchmark-instrumentation")]
-        let solve_started = Instant::now();
-        let mut session = Session::new(n, self.options.history_size(), self.kernel);
-        let mut evaluations = 0usize;
-        let mut iterations = 0usize;
-        let mut line_search_probes = 0usize;
-        #[cfg(feature = "benchmark-instrumentation")]
-        let phase_start = Instant::now();
-        let mut value = evaluate(
-            x,
-            &mut self.workspace.evaluation_gradient,
-            adapter,
-            &mut evaluations,
-        )?;
-        #[cfg(feature = "benchmark-instrumentation")]
-        {
-            self.instrumentation.evaluation_nanoseconds += elapsed_nanoseconds(phase_start);
-        }
-        let (mut pg, mut active_variables) = projected_gradient_and_active_count_unchecked(
-            x,
-            &self.workspace.evaluation_gradient,
-            &self.workspace.lower,
-            &self.workspace.upper,
-        );
-        if self.options.projected_gradient_tolerance() > 0.0
-            && pg <= self.options.projected_gradient_tolerance()
-        {
-            let report = report(
-                value,
-                pg,
-                solve_stats(
-                    &session,
-                    x,
-                    iterations,
-                    evaluations,
-                    line_search_probes,
-                    active_variables,
-                ),
-                Termination::Converged(Convergence::ProjectedGradient),
-            );
-            self.workspace.commit_gradient()?;
-            #[cfg(feature = "benchmark-instrumentation")]
-            self.finish_instrumentation(solve_started);
-            return Ok(report);
-        }
-
-        let termination = 'solve: loop {
-            if iterations >= self.options.max_iterations() {
-                break Termination::Stopped(StopReason::MaximumIterations);
-            }
-            if evaluations >= self.options.max_evaluations() {
-                break Termination::Stopped(StopReason::MaximumEvaluations);
-            }
-            #[cfg(feature = "benchmark-instrumentation")]
-            let phase_start = Instant::now();
-            let direction = session.direction(x, &mut self.workspace);
-            #[cfg(feature = "benchmark-instrumentation")]
-            {
-                self.instrumentation.direction_nanoseconds += elapsed_nanoseconds(phase_start);
-                let timings = session.benchmark_timings();
-                self.instrumentation.cauchy_nanoseconds = timings.cauchy_nanoseconds;
-                self.instrumentation.freev_nanoseconds = timings.freev_nanoseconds;
-                self.instrumentation.formk_nanoseconds = timings.formk_nanoseconds;
-                self.instrumentation.cmprlb_nanoseconds = timings.cmprlb_nanoseconds;
-                self.instrumentation.subsm_nanoseconds = timings.subsm_nanoseconds;
-            }
-            if let Err(error) = direction {
-                break Termination::Failed(match error {
-                    DirectionError::NoDescent => Failure::NoDescentDirection,
-                    DirectionError::Factorization => Failure::Factorization,
-                    DirectionError::Numerical => Failure::Numerical,
-                });
-            }
-
-            self.workspace.old_x.copy_from_slice(x);
-            self.workspace
-                .old_gradient
-                .copy_from_slice(&self.workspace.evaluation_gradient);
-            let old_value = value;
-            let gdold = dot(&self.workspace.old_gradient, &self.workspace.direction);
-            let maximum_step = feasible_maximum_step(
-                &self.workspace.old_x,
-                &self.workspace.direction,
-                &self.workspace.lower,
-                &self.workspace.upper,
-                iterations,
-            );
-            let norm = dot(&self.workspace.direction, &self.workspace.direction).sqrt();
-            let initial_step = if iterations == 0 {
-                let boxed = self
-                    .workspace
-                    .lower
-                    .iter()
-                    .zip(&self.workspace.upper)
-                    .all(|(&l, &u)| l.is_finite() && u.is_finite());
-                if boxed {
-                    1.0
-                } else {
-                    (1.0 / norm).min(maximum_step)
-                }
-            } else {
-                1.0
-            };
-            let mut search = match DcSearch::start(
-                value,
-                gdold,
-                initial_step,
-                SearchConfig::lbfgsb(maximum_step),
-            ) {
-                Ok(search) => search,
-                Err(_) if session.has_history() => {
-                    session.reset_history();
-                    continue;
-                }
-                Err(_) => break Termination::Failed(Failure::LineSearch),
-            };
-            let mut accepted = false;
-            for _ in 0..self.options.max_line_search_evaluations() {
-                if evaluations >= self.options.max_evaluations() {
-                    x.copy_from_slice(&self.workspace.old_x);
-                    value = old_value;
-                    self.workspace
-                        .evaluation_gradient
-                        .copy_from_slice(&self.workspace.old_gradient);
-                    break 'solve Termination::Stopped(StopReason::MaximumEvaluations);
-                }
-                let step = search.step();
-                if step == 1.0 {
-                    x.copy_from_slice(&self.workspace.cauchy);
-                } else {
-                    for i in 0..n {
-                        x[i] = (self.workspace.old_x[i] + step * self.workspace.direction[i])
-                            .max(self.workspace.lower[i])
-                            .min(self.workspace.upper[i]);
-                    }
-                }
-                #[cfg(feature = "benchmark-instrumentation")]
-                let phase_start = Instant::now();
-                let trial_value = match evaluate(
-                    x,
-                    &mut self.workspace.trial_gradient,
-                    adapter,
-                    &mut evaluations,
-                ) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        x.copy_from_slice(&self.workspace.old_x);
-                        self.workspace
-                            .evaluation_gradient
-                            .copy_from_slice(&self.workspace.old_gradient);
-                        return Err(error);
-                    }
-                };
-                #[cfg(feature = "benchmark-instrumentation")]
-                {
-                    self.instrumentation.evaluation_nanoseconds += elapsed_nanoseconds(phase_start);
-                }
-                line_search_probes += 1;
-                let gd = dot(&self.workspace.trial_gradient, &self.workspace.direction);
-                match search.advance(trial_value, gd) {
-                    SearchResult::Evaluate(_) => {}
-                    SearchResult::Converged(_) | SearchResult::Warning { .. } => {
-                        value = trial_value;
-                        self.workspace
-                            .evaluation_gradient
-                            .copy_from_slice(&self.workspace.trial_gradient);
-                        accepted = true;
-                        break;
-                    }
-                }
-            }
-            if !accepted {
-                x.copy_from_slice(&self.workspace.old_x);
-                value = old_value;
-                self.workspace
-                    .evaluation_gradient
-                    .copy_from_slice(&self.workspace.old_gradient);
-                if session.has_history() {
-                    session.reset_history();
-                    continue;
-                }
-                break Termination::Stopped(StopReason::MaximumLineSearchEvaluations);
-            }
-
-            iterations += 1;
-            (pg, active_variables) = projected_gradient_and_active_count_unchecked(
-                x,
-                &self.workspace.evaluation_gradient,
-                &self.workspace.lower,
-                &self.workspace.upper,
-            );
-            let stats = solve_stats(
-                &session,
-                x,
-                iterations,
-                evaluations,
-                line_search_probes,
-                active_variables,
-            );
-            #[cfg(feature = "benchmark-instrumentation")]
-            let phase_start = Instant::now();
-            let control = adapter
-                .accepted_iteration(Iteration {
-                    x,
-                    value,
-                    projected_gradient_norm: pg,
-                    stats,
-                })
-                .map_err(SolveError::Callback)?;
-            #[cfg(feature = "benchmark-instrumentation")]
-            {
-                self.instrumentation.observer_nanoseconds += elapsed_nanoseconds(phase_start);
-            }
-            if control == Control::Stop {
-                break Termination::Stopped(StopReason::User);
-            }
-            if self.options.projected_gradient_tolerance() > 0.0
-                && pg <= self.options.projected_gradient_tolerance()
-            {
-                break Termination::Converged(Convergence::ProjectedGradient);
-            }
-            let scale = old_value.abs().max(value.abs()).max(1.0);
-            if self.options.relative_function_tolerance() > 0.0
-                && old_value - value <= self.options.relative_function_tolerance() * scale
-            {
-                break Termination::Converged(Convergence::RelativeFunction);
-            }
-            if evaluations >= self.options.max_evaluations() {
-                break Termination::Stopped(StopReason::MaximumEvaluations);
-            }
-            #[cfg(feature = "benchmark-instrumentation")]
-            let phase_start = Instant::now();
-            session.update(x, gdold, &mut self.workspace);
-            #[cfg(feature = "benchmark-instrumentation")]
-            {
-                self.instrumentation.history_update_nanoseconds += elapsed_nanoseconds(phase_start);
-            }
-        };
-        let report = report(
-            value,
-            pg,
-            solve_stats(
-                &session,
-                x,
-                iterations,
-                evaluations,
-                line_search_probes,
-                active_variables,
-            ),
-            termination,
-        );
-        self.workspace.commit_gradient()?;
-        #[cfg(feature = "benchmark-instrumentation")]
-        self.finish_instrumentation(solve_started);
-        Ok(report)
+    /// Starts a resumable solve, projecting finite initial coordinates into the box.
+    ///
+    /// Each call resets curvature history but reuses allocated workspace. The returned
+    /// run exclusively borrows this solver and `x` until dropped. See [`crate::Run`].
+    pub fn start<'a>(
+        &'a mut self,
+        x: &'a mut [f64],
+        bounds: Bounds<'_>,
+    ) -> Result<crate::Run<'a>, SolveError<std::convert::Infallible>> {
+        crate::Run::new(self, x, bounds)
     }
 
     #[cfg(feature = "benchmark-instrumentation")]
-    fn finish_instrumentation(&mut self, started: Instant) {
+    pub(crate) fn finish_instrumentation(&mut self, started: Instant) {
         self.instrumentation.total_nanoseconds = elapsed_nanoseconds(started);
         let attributed = self
             .instrumentation
@@ -469,70 +242,20 @@ impl Solver {
     }
 }
 
-fn evaluate<A>(
-    x: &[f64],
-    gradient: &mut [f64],
-    adapter: &mut A,
-    evaluations: &mut usize,
-) -> Result<f64, SolveError<A::Error>>
-where
-    A: SolveAdapter,
-{
-    *evaluations += 1;
-    let value = adapter
-        .value_and_gradient(x, gradient)
-        .map_err(SolveError::Objective)?;
-    if !value.is_finite() {
-        return Err(SolveError::Evaluation(EvaluationError::NonFiniteValue));
+fn convert_start_error<E>(error: SolveError<std::convert::Infallible>) -> SolveError<E> {
+    match error {
+        SolveError::Bounds(error) => SolveError::Bounds(error),
+        SolveError::Options(error) => SolveError::Options(error),
+        SolveError::Workspace(error) => SolveError::Workspace(error),
+        SolveError::InvalidInitialValue { index } => SolveError::InvalidInitialValue { index },
+        SolveError::Evaluation(error) => SolveError::Evaluation(error),
+        SolveError::Internal(error) => SolveError::Internal(error),
+        SolveError::Objective(never) | SolveError::Callback(never) => match never {},
     }
-    if let Some(index) = gradient.iter().position(|value| !value.is_finite()) {
-        return Err(SolveError::Evaluation(EvaluationError::NonFiniteGradient {
-            index,
-        }));
-    }
-    Ok(value)
-}
-
-fn report(
-    value: f64,
-    projected_gradient_norm: f64,
-    stats: Stats,
-    termination: Termination,
-) -> Report {
-    Report {
-        value,
-        projected_gradient_norm,
-        termination,
-        stats,
-    }
-}
-
-fn solve_stats(
-    session: &Session,
-    x: &[f64],
-    iterations: usize,
-    evaluations: usize,
-    line_search_probes: usize,
-    active_variables: usize,
-) -> Stats {
-    Stats {
-        iterations,
-        evaluations,
-        line_search_probes,
-        accepted_updates: session.accepted_updates(),
-        skipped_updates: session.skipped_updates(),
-        history_resets: session.history_resets(),
-        active_variables,
-        free_variables: x.len() - active_variables,
-    }
-}
-
-fn dot(left: &[f64], right: &[f64]) -> f64 {
-    left.iter().zip(right).map(|(&a, &b)| a * b).sum()
 }
 
 #[cfg(feature = "benchmark-instrumentation")]
-fn elapsed_nanoseconds(start: Instant) -> u64 {
+pub(crate) fn elapsed_nanoseconds(start: Instant) -> u64 {
     start.elapsed().as_nanos().min(u64::MAX as u128) as u64
 }
 

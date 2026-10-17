@@ -1,6 +1,6 @@
 # ADR-001: Resumable solver with a shared numerical engine
 
-Status: Accepted
+Status: Implemented
 Date: 2026-10-17
 
 ## Context
@@ -12,8 +12,9 @@ The extracted solver already has independent Fortran fixtures and warm allocatio
 Expose a borrowing Run with explicit Evaluate, Accepted, and Finished states. The caller
 fills a borrowed gradient buffer and submits a finite value, or aborts. Evaluate exposes
 initial/trial context and the step length. Accepted exposes the accepted gradient, step
-length and infinity norm of displacement. A single state machine drives both this API
+length and an on-demand infinity norm of displacement (no default extra vector pass). A single state machine drives both this API
 and existing callbacks; preserve arithmetic, line search, limits, and history policy.
+Expose owned workspace capacity in bytes for reproducible large-n memory measurements.
 No threads, async runtime, dynamic dispatch, or per-step allocations are introduced.
 Each run resets curvature history while retaining workspace capacity. Dropping a run
 restores the last accepted coordinates during a pending trial. Callback/evaluation errors
@@ -37,3 +38,11 @@ Run scalar/all-feature/reference/allocation/doc tests, formatting, strict clippy
 package dry run, callback-versus-resumable equivalence, invalid-evaluation recovery,
 cancellation and budget tests. Compare representative release timings against the parent.
 Record measurements and remaining limits in docs/STATUS.md.
+
+## Outcome
+
+Implemented by the shared Run engine; seven protocol tests, scalar/all-feature
+Fortran tests, and callback/resumable allocation checks pass on Rust 1.80 and 1.89.
+Full checks and measured overhead are recorded in docs/validation/ADR-001.md.
+No default numerical policy or fixture was changed. Relative-function stopping
+remains distinct from stationarity. Scaling and alternate line searches are deferred.

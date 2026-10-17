@@ -1,4 +1,4 @@
-use alloy_lbfgsb::{Backend, Bounds, Control, Options, Solver};
+use alloy_lbfgsb::{Backend, Bounds, Control, Options, RunState, Solver};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::convert::Infallible;
@@ -112,6 +112,31 @@ fn warm_solver_allocates_nothing_during_solve() {
             assert_eq!(
                 allocations, 0,
                 "warm same-thread solver-owned allocations for {backend:?}, m={history}"
+            );
+            x.fill(3.0);
+            ALLOCATIONS.with(|count| count.set(0));
+            ENABLED.with(|enabled| enabled.set(true));
+            let mut run = solver.start(&mut x, bounds).unwrap();
+            loop {
+                match run.state() {
+                    RunState::Evaluate(e) => {
+                        let value = extended_rosenbrock(e.x, e.gradient).unwrap();
+                        run.submit(value).unwrap();
+                    }
+                    RunState::Accepted(it) => {
+                        std::hint::black_box(it.step_norm());
+                        run.advance(Control::Continue).unwrap();
+                    }
+                    RunState::Finished(_) => break,
+                    _ => unreachable!(),
+                }
+            }
+            drop(run);
+            ENABLED.with(|enabled| enabled.set(false));
+            assert_eq!(
+                ALLOCATIONS.with(Cell::get),
+                0,
+                "warm resumable solver-owned allocations for {backend:?}, m={history}"
             );
         }
     }
