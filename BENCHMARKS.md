@@ -52,7 +52,7 @@ and compiles the unmodified upstream routines with the local
 `benchmark_driver.f90`. Sources and executables remain temporary.
 
 ```powershell
-.\crates\lbfgsb\tests\reference\benchmark.ps1 -Repeats 1000
+.\tests\reference\benchmark.ps1 -Repeats 1000
 ```
 
 With GNU Fortran 15.2.0, `-O3 -fno-fast-math`, the same machine measured:
@@ -164,7 +164,7 @@ objective, bounds, history sizes, `factr=1e7`, `pgtol=1e-5`, and `maxls=20`.
 It is a PEP 723 script with a SciPy dependency and is run through uv:
 
 ```powershell
-uv run --script .\crates\lbfgsb\tests\reference\benchmark_scipy.py `
+uv run --script .\tests\reference\benchmark_scipy.py `
   --n 1000 --m 10 --repeats 50
 ```
 

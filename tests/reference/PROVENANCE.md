@@ -38,7 +38,7 @@ Compiler flags:
 Run from the repository root:
 
 ```powershell
-& .\crates\lbfgsb\tests\reference\regenerate.ps1
+& .\tests\reference\regenerate.ps1
 ```
 
 The script downloads the release into a temporary directory, verifies the

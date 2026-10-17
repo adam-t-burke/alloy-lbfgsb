@@ -36,3 +36,9 @@ faer-core = { version = "0.17", optional = true }
 name = "performance"
 harness = false
 
+
+# Match the build settings used by the inherited performance baseline.
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
