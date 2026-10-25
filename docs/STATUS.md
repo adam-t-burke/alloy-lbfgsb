@@ -5,9 +5,11 @@ version, tag, or GitHub release existed. The published API is the callback solve
 and the resumable `Solver::start` / `RunState` API on the deterministic scalar
 backend. Optional `faer-backend` and `benchmark-instrumentation` stay opt-in.
 Normal `cargo build` and `cargo test` use the committed CSV fixtures. The Fortran
-regenerators in `tests/reference` and the experiments under `tools/` are repository
-tooling; they are not a build dependency and are not required to use the crate.
-`tools/` itself is not part of the packaged file list.
+regenerators in `tests/reference` are packaged with those fixtures and are not
+invoked by the build or the tests. `tools/README.md` is packaged because these
+notes link to it. The profiling scripts and variant patches under `tools/` are
+not packaged, and neither they nor a Fortran compiler are required to build or
+test the crate.
 
 2026-10-17: ADR-001 resumable interface and ADR-002 profiling/tuning implemented.
 
@@ -31,9 +33,9 @@ attribution and parity remain open. Neither sentinel removal, direct-wrapper byp
 nor forced transition inlining consistently resolved it; those changes were rejected.
 
 Read [ADR-002 validation](validation/ADR-002.md) and [benchmarks](../BENCHMARKS.md).
-Reproduction scripts are described in `tools/README.md` in the git repository.
-That directory is not in the crates.io package. All sample ranges and rejected
-controls are retained.
+Reproduction scripts are described in `tools/README.md`. Cargo packages that
+linked note, not the scripts or variant patches beside it. All sample ranges
+and rejected controls are retained.
 ADR-001's historical checks remain in [its report](validation/ADR-001.md).
 
 Next: inspect equal-policy generated-code/alias/bounds-check/vectorization differences
