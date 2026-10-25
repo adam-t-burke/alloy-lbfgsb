@@ -1,5 +1,14 @@
 # Status
 
+2026-10-25: Version 0.1.0 is the first crates.io release of this tree. No earlier
+version, tag, or GitHub release existed. The published API is the callback solver
+and the resumable `Solver::start` / `RunState` API on the deterministic scalar
+backend. Optional `faer-backend` and `benchmark-instrumentation` stay opt-in.
+Normal `cargo build` and `cargo test` use the committed CSV fixtures. The Fortran
+regenerators in `tests/reference` and the experiments under `tools/` are repository
+tooling; they are not a build dependency and are not required to use the crate.
+`tools/` itself is not part of the packaged file list.
+
 2026-10-17: ADR-001 resumable interface and ADR-002 profiling/tuning implemented.
 
 - One numerical engine serves callback and resumable borrowing APIs.
@@ -21,8 +30,10 @@ controls; large-case gaps are around 4-7% across repeated experiments. Exact mac
 attribution and parity remain open. Neither sentinel removal, direct-wrapper bypass,
 nor forced transition inlining consistently resolved it; those changes were rejected.
 
-Read [ADR-002 validation](validation/ADR-002.md), [benchmarks](../BENCHMARKS.md), and
-[reproduction tools](../tools/README.md). All sample ranges and rejected controls are retained.
+Read [ADR-002 validation](validation/ADR-002.md) and [benchmarks](../BENCHMARKS.md).
+Reproduction scripts are described in `tools/README.md` in the git repository.
+That directory is not in the crates.io package. All sample ranges and rejected
+controls are retained.
 ADR-001's historical checks remain in [its report](validation/ADR-001.md).
 
 Next: inspect equal-policy generated-code/alias/bounds-check/vectorization differences

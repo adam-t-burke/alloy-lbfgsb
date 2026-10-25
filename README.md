@@ -5,6 +5,16 @@ A standalone, callback-first interface for bound-constrained L-BFGS-B.
 The minimum supported Rust version is 1.80 for both the scalar implementation
 and the optional `faer-backend` feature.
 
+Version 0.1.0 is the first crates.io release. No earlier version was published.
+Depend on the deterministic scalar backend by leaving the optional features off:
+
+```toml
+alloy-lbfgsb = { version = "0.1.0", default-features = false }
+```
+
+`Backend::Auto` resolves to `Backend::Deterministic`. Enable `faer-backend` or
+`benchmark-instrumentation` only when that optional behavior is wanted.
+
 The [API documentation](https://docs.rs/alloy-lbfgsb) describes the complete
 public interface. A runnable version of the example below is available as
 `examples/quadratic.rs`:
